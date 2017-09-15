@@ -56,6 +56,12 @@ typedef Traits::edge_descriptor Edge;
 // Function Definitions -----
 void preprocess(Graph &G, Vertex source, Vertex sink);
 
+// Utility function for selecting node with smallest distance among nodes with large excess
+Vertex selectNode(Graph &G, int delta);
+
+// implements push of flow or relabel of distance of current node
+void pushRelabel(Graph &G, Vertex current, int delta);
+
 
 
 int main() {
@@ -83,11 +89,31 @@ int main() {
 
 
 
+    // Find the max capacity to calculate delta = 2 ^ log(maxCapacity)
+    Graph::edge_iterator edgeIt, edgeEnd;
+    tie(edgeIt, edgeEnd) = edges(G);
+    std::vector<int> capacities(num_edges(G));
+    for (; edgeIt!= edgeEnd; ++edgeIt) {
+        capacities.push_back(G[*edgeIt].residual);
+    }
+    int maxCap = *max_element(capacities.begin(), capacities.end());
+    int delta = (int) pow(2, ceil(log2(maxCap)));
+
+    while(delta >= 1) {
+        Vertex currentNode = selectNode(G, delta); // select node with smallest distance among nodes with large excess
+        while(currentNode != NULL) {
 
 
 
-    print_graph(G, get(&bundleVertex::id, G));
-    //print_graph(make_reverse_graph(G), get(vertex_index, G));
+
+        }
+        delta /= 2;  // update delta
+    }
+
+
+
+
+    //print_graph(G, get(&bundleVertex::id, G));
     return 0;
 }
 
@@ -132,8 +158,61 @@ void preprocess(Graph &G, Vertex source, Vertex sink) {
 
 
 
+Vertex selectNode(Graph &G, int delta) {
+
+    double min = std::numeric_limits<double>::infinity();
+    Vertex minNode = NULL;
+
+    // Store the distance of nodes with large excess in vector
+    Graph::vertex_iterator vertexIt, vertexEnd;
+    tie(vertexIt, vertexEnd) = vertices(G);
+    for (; vertexIt != vertexEnd; ++vertexIt) {
+        if(G[*vertexIt].excess >= delta/2) {
+            if(G[*vertexIt].excess < min) {
+                min = G[*vertexIt].excess;
+                minNode = *vertexIt;
+            }
+        }
+    }
+
+    return minNode;
+}
 
 
+void pushRelabel(Graph &G, Vertex current, int delta) {
+
+    // stores candidate distances of adj nodes for raising current node's distance label to
+    std::vector<int> adjDist;
+
+    Graph::out_edge_iterator outedgeIt, outedgeEnd;
+    tie(outedgeIt, outedgeEnd) = out_edges(current, G);
+    for(; outedgeIt != outedgeEnd; ++outedgeIt) {
+        Vertex target = boost::target(*outedgeIt, G);
+
+        if(G[current].distance == G[target].distance + 1) {  // if network contains an admissable arc
+            int pushFlow = std::min({G[current].excess, G[*outedgeIt].residual, delta - G[target].excess});  // last arg ensures that excess doesnt exceed delta
+
+            // implement Push
+            G[current].excess -= pushFlow;
+            G[target].excess += pushFlow;
+            G[*outedgeIt].residual -= pushFlow;
+            if(G[*outedgeIt].residual == 0)  // saturation
+                remove_edge(*outedgeIt, G); // remove saturated edge
+            add_edge(target, current, bundleEdge{pushFlow}, G);  // add reverse edge
+
+            return;
+        } else {
+            if(G[*outedgeIt].residual > 0)
+                adjDist.push_back(G[target].distance + 1);
+        }
+    }
+
+    // implement Relabel
+    int minDist = *min_element(adjDist.begin(), adjDist.end());
+    G[current].distance = minDist;
+
+    return;
+}
 
 
 
